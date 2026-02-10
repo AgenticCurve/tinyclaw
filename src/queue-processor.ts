@@ -97,7 +97,7 @@ async function processMessage(messageFile: string): Promise<void> {
                 `cd "${SCRIPT_DIR}" && claude --dangerously-skip-permissions ${modelFlag}${continueFlag}-p "${message.replace(/"/g, '\\"')}"`,
                 {
                     encoding: "utf-8",
-                    timeout: 120000, // 2 minute timeout
+                    timeout: 0, // No timeout - wait for Claude to finish (agents can run long)
                     maxBuffer: 10 * 1024 * 1024, // 10MB buffer
                 },
             );

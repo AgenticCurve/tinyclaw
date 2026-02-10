@@ -1,16 +1,16 @@
 # TinyClaw 🦞
 
-Minimal multi-channel AI assistant with Discord and WhatsApp integration.
+Minimal multi-channel AI assistant with Discord, WhatsApp, and Telegram integration.
 
 ## 🎯 What is TinyClaw?
 
 TinyClaw is a lightweight wrapper around [Claude Code](https://claude.com/claude-code) that:
 
-- ✅ Connects Discord (via bot token) and WhatsApp (via QR code)
+- ✅ Connects Discord, WhatsApp, and Telegram
 - ✅ Processes messages sequentially (no race conditions)
 - ✅ Maintains conversation context
 - ✅ Runs 24/7 in tmux
-- ✅ Multi-channel ready (Telegram, Slack, etc.)
+- ✅ Extensible multi-channel architecture
 
 **Key innovation:** File-based queue system prevents race conditions and enables seamless multi-channel support.
 
@@ -28,8 +28,8 @@ TinyClaw is a lightweight wrapper around [Claude Code](https://claude.com/claude
 └─────────────────┘  ├──→ Queue (incoming/)
                      │        ↓
 ┌─────────────────┐  │   ┌──────────────┐
-│  Other Channels │──┤   │   Queue      │
-│  (future)       │  │   │  Processor   │
+│  Telegram       │──┤   │   Queue      │
+│  Client         │  │   │  Processor   │
 └─────────────────┘  │   └──────────────┘
                      │        ↓
                      │   claude -c -p
@@ -48,6 +48,7 @@ TinyClaw is a lightweight wrapper around [Claude Code](https://claude.com/claude
 - [Claude Code](https://claude.com/claude-code) installed
 - Node.js v14+
 - tmux
+- Bash 4.0+ (macOS users: `brew install bash` - system bash 3.2 won't work)
 
 ### Installation
 
@@ -70,15 +71,14 @@ On first start, you'll see an interactive setup wizard:
   TinyClaw - Setup Wizard
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Which messaging channel do you want to use?
+Which messaging channels do you want to enable?
 
-  1) Discord
-  2) WhatsApp
-  3) Both
-
-Choose [1-3]: 3
-
-✓ Channel: both
+  Enable Discord? [y/N]: y
+    ✓ Discord enabled
+  Enable WhatsApp? [y/N]: y
+    ✓ WhatsApp enabled
+  Enable Telegram? [y/N]: y
+    ✓ Telegram enabled
 
 Enter your Discord bot token:
 (Get one at: https://discord.com/developers/applications)
@@ -86,6 +86,13 @@ Enter your Discord bot token:
 Token: YOUR_DISCORD_BOT_TOKEN_HERE
 
 ✓ Discord token saved
+
+Enter your Telegram bot token:
+(Create a bot via @BotFather on Telegram to get a token)
+
+Token: YOUR_TELEGRAM_BOT_TOKEN_HERE
+
+✓ Telegram token saved
 
 Which Claude model?
 
@@ -99,9 +106,9 @@ Choose [1-2]: 1
 Heartbeat interval (seconds)?
 (How often Claude checks in proactively)
 
-Interval [default: 500]: 500
+Interval [default: 3600]: 3600
 
-✓ Heartbeat interval: 500s
+✓ Heartbeat interval: 3600s
 
 ✓ Configuration saved to .tinyclaw/settings.json
 ```
@@ -114,6 +121,14 @@ Interval [default: 500]: 500
 4. Copy the bot token
 5. Enable "Message Content Intent" in Bot settings
 6. Invite the bot to your server using OAuth2 URL Generator
+
+### Telegram Setup
+
+1. Open Telegram and search for @BotFather
+2. Send `/newbot` and follow the prompts
+3. Choose a name and username for your bot
+4. Copy the bot token provided by BotFather
+5. Start a chat with your bot or add it to a group
 
 ### WhatsApp Setup
 
@@ -138,6 +153,8 @@ Scan it with your phone. **Done!** 🎉
 
 **WhatsApp:** Send a message to the connected number
 
+**Telegram:** Send a message to your bot
+
 You'll get a response! 🤖
 
 ## 📋 Commands
@@ -161,6 +178,7 @@ You'll get a response! 🤖
 # Reset channel authentication
 ./tinyclaw.sh channels reset whatsapp  # Clear WhatsApp session
 ./tinyclaw.sh channels reset discord   # Shows Discord reset instructions
+./tinyclaw.sh channels reset telegram  # Shows Telegram reset instructions
 
 # Switch Claude model
 ./tinyclaw.sh model           # Show current model
@@ -170,6 +188,7 @@ You'll get a response! 🤖
 # View logs
 ./tinyclaw.sh logs whatsapp   # WhatsApp activity
 ./tinyclaw.sh logs discord    # Discord activity
+./tinyclaw.sh logs telegram   # Telegram activity
 ./tinyclaw.sh logs queue      # Queue processing
 ./tinyclaw.sh logs heartbeat  # Heartbeat checks
 
@@ -188,8 +207,8 @@ You'll get a response! 🤖
 ### 1. setup-wizard.sh
 
 - Interactive setup on first run
-- Configures channels (Discord/WhatsApp/Both)
-- Collects Discord bot token
+- Configures channels (Discord/WhatsApp/Telegram)
+- Collects bot tokens for enabled channels
 - Selects Claude model
 - Writes to `.tinyclaw/settings.json`
 
@@ -208,20 +227,29 @@ You'll get a response! 🤖
 - Reads responses from queue
 - Sends replies back
 
-### 4. queue-processor.ts
+### 4. telegram-client.ts
+
+- Connects to Telegram via bot token
+- Listens for messages
+- Writes incoming messages to queue
+- Reads responses from queue
+- Sends replies back
+
+### 5. queue-processor.ts
 
 - Polls incoming queue
 - Processes **ONE message at a time**
 - Calls `claude -c -p`
+- Waits indefinitely for Claude to finish (supports long-running agent tasks)
 - Writes responses to outgoing queue
 
-### 5. heartbeat-cron.sh
+### 6. heartbeat-cron.sh
 
 - Runs every 5 minutes
 - Sends heartbeat via queue
 - Keeps conversation active
 
-### 6. tinyclaw.sh
+### 7. tinyclaw.sh
 
 - Main orchestrator
 - Manages tmux session
@@ -230,17 +258,17 @@ You'll get a response! 🤖
 ## 💬 Message Flow
 
 ```
-Discord/WhatsApp message arrives
+Message arrives (Discord/WhatsApp/Telegram)
        ↓
 Client writes to:
-  .tinyclaw/queue/incoming/{discord|whatsapp}_<id>.json
+  .tinyclaw/queue/incoming/{channel}_<id>.json
        ↓
 queue-processor.ts picks it up
        ↓
 Runs: claude -c -p "message"
        ↓
 Writes to:
-  .tinyclaw/queue/outgoing/{discord|whatsapp}_<id>.json
+  .tinyclaw/queue/outgoing/{channel}_<id>.json
        ↓
 Client reads and sends response
        ↓
@@ -271,6 +299,7 @@ tinyclaw/
 ├── src/
 │   ├── discord-client.ts    # Discord I/O
 │   ├── whatsapp-client.ts   # WhatsApp I/O
+│   ├── telegram-client.ts   # Telegram I/O
 │   └── queue-processor.ts   # Message processing
 ├── dist/                 # TypeScript build output
 ├── setup-wizard.sh       # Interactive setup
@@ -300,10 +329,11 @@ All configuration is stored in `.tinyclaw/settings.json`:
 
 ```json
 {
-  "channel": "both",
+  "channels": "discord,whatsapp,telegram",
   "model": "sonnet",
-  "discord_bot_token": "YOUR_TOKEN_HERE",
-  "heartbeat_interval": 500
+  "discord_bot_token": "YOUR_DISCORD_TOKEN_HERE",
+  "telegram_bot_token": "YOUR_TELEGRAM_TOKEN_HERE",
+  "heartbeat_interval": 3600
 }
 ```
 
@@ -312,7 +342,7 @@ To reconfigure, run:
 ./tinyclaw.sh setup
 ```
 
-The heartbeat interval is in seconds (default: 500s = ~8 minutes).
+The heartbeat interval is in seconds (default: 3600s = 60 minutes).
 This controls how often Claude proactively checks in.
 
 ### Heartbeat Prompt
@@ -336,6 +366,12 @@ Take action if needed.
 ```bash
 # WhatsApp activity
 tail -f .tinyclaw/logs/whatsapp.log
+
+# Discord activity
+tail -f .tinyclaw/logs/discord.log
+
+# Telegram activity
+tail -f .tinyclaw/logs/telegram.log
 
 # Queue processing
 tail -f .tinyclaw/logs/queue.log
@@ -371,25 +407,25 @@ Message 3 → Wait → Process → Done
 
 ### ✅ Multi-Channel Support
 
-Discord and WhatsApp work seamlessly together. Add more channels easily:
+Discord, WhatsApp, and Telegram work seamlessly together. All channels share the same conversation context!
 
-**Example: Add Telegram**
+**Adding more channels is easy:**
 
 ```typescript
-// telegram-client.ts
+// new-channel-client.ts
 // Write to queue
 fs.writeFileSync(
-  '.tinyclaw/queue/incoming/telegram_<id>.json',
+  '.tinyclaw/queue/incoming/channel_<id>.json',
   JSON.stringify({
-    channel: 'telegram',
+    channel: 'channel-name',
     message,
-    chatId,
+    sender,
     timestamp
   })
 );
 
 // Read responses from outgoing queue
-// Same format as Discord/WhatsApp
+// Same format as other channels
 ```
 
 Queue processor handles all channels automatically!
@@ -423,6 +459,26 @@ WhatsApp session persists across restarts:
 
 ## 🐛 Troubleshooting
 
+### Bash version error on macOS
+
+If you see:
+```
+Error: This script requires bash 4.0 or higher (you have 3.2.57)
+```
+
+macOS ships with bash 3.2 by default. Install a newer version:
+
+```bash
+# Install bash 5.x via Homebrew
+brew install bash
+
+# Add to your PATH (add this to ~/.zshrc or ~/.bash_profile)
+export PATH="/opt/homebrew/bin:$PATH"
+
+# Or run directly with the new bash
+/opt/homebrew/bin/bash ./tinyclaw.sh start
+```
+
 ### WhatsApp not connecting
 
 ```bash
@@ -441,6 +497,16 @@ WhatsApp session persists across restarts:
 ./tinyclaw.sh logs discord
 
 # Update Discord bot token
+./tinyclaw.sh setup
+```
+
+### Telegram not connecting
+
+```bash
+# Check logs
+./tinyclaw.sh logs telegram
+
+# Update Telegram bot token
 ./tinyclaw.sh setup
 ```
 
@@ -513,6 +579,7 @@ Claude: [fixes and commits]
 
 - WhatsApp on phone
 - Discord on desktop/mobile
+- Telegram on any device
 - CLI for scripts
 
 All channels share the same Claude conversation!

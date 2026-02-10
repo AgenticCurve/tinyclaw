@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Heartbeat - Periodically prompts Claude via queue system
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -7,11 +7,11 @@ LOG_FILE="$SCRIPT_DIR/.tinyclaw/logs/heartbeat.log"
 QUEUE_INCOMING="$SCRIPT_DIR/.tinyclaw/queue/incoming"
 SETTINGS_FILE="$SCRIPT_DIR/.tinyclaw/settings.json"
 
-# Read interval from settings.json, default to 500
+# Read interval from settings.json, default to 3600
 if [ -f "$SETTINGS_FILE" ]; then
     INTERVAL=$(grep -o '"heartbeat_interval"[[:space:]]*:[[:space:]]*[0-9]*' "$SETTINGS_FILE" | grep -o '[0-9]*$')
 fi
-INTERVAL=${INTERVAL:-500}
+INTERVAL=${INTERVAL:-3600}
 
 mkdir -p "$QUEUE_INCOMING"
 
