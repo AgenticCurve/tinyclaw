@@ -20,12 +20,12 @@ echo ""
 
 # --- Channel registry ---
 # To add a new channel, add its ID here and fill in the config arrays below.
-ALL_CHANNELS=(discord whatsapp telegram)
+ALL_CHANNELS=(telegram discord whatsapp)
 
 declare -A CHANNEL_DISPLAY=(
+    [telegram]="Telegram"
     [discord]="Discord"
     [whatsapp]="WhatsApp"
-    [telegram]="Telegram"
 )
 declare -A CHANNEL_TOKEN_KEY=(
     [discord]="discord_bot_token"
@@ -41,7 +41,7 @@ declare -A CHANNEL_TOKEN_HELP=(
 )
 
 # Channel selection - simple checklist
-echo "Which messaging channels do you want to enable?"
+echo "Which messaging channels (Telegram, Discord, WhatsApp) do you want to enable?"
 echo ""
 
 ENABLED_CHANNELS=()
@@ -102,36 +102,51 @@ echo ""
 echo "Heartbeat interval (seconds)?"
 echo -e "${YELLOW}(How often Claude checks in proactively)${NC}"
 echo ""
-read -rp "Interval [default: 500]: " HEARTBEAT_INPUT
-HEARTBEAT_INTERVAL=${HEARTBEAT_INPUT:-500}
+read -rp "Interval in seconds [default: 3600]: " HEARTBEAT_INPUT
+HEARTBEAT_INTERVAL=${HEARTBEAT_INPUT:-3600}
 
 if ! [[ "$HEARTBEAT_INTERVAL" =~ ^[0-9]+$ ]]; then
-    echo -e "${RED}Invalid interval, using default 500${NC}"
-    HEARTBEAT_INTERVAL=500
+    echo -e "${RED}Invalid interval, using default 3600${NC}"
+    HEARTBEAT_INTERVAL=3600
 fi
 echo -e "${GREEN}✓ Heartbeat interval: ${HEARTBEAT_INTERVAL}s${NC}"
 echo ""
 
-# Build channels comma-separated string
-CHANNELS_CSV=$(IFS=,; echo "${ENABLED_CHANNELS[*]}")
-
-# Build token entries for settings.json
-TOKENS_JSON=""
-for ch in "${ALL_CHANNELS[@]}"; do
-    token_key="${CHANNEL_TOKEN_KEY[$ch]:-}"
-    if [ -n "$token_key" ]; then
-        token_value="${TOKENS[$ch]:-}"
-        TOKENS_JSON="${TOKENS_JSON}  \"${token_key}\": \"${token_value}\",
-"
+# Build enabled channels array JSON
+CHANNELS_JSON="["
+for i in "${!ENABLED_CHANNELS[@]}"; do
+    if [ $i -gt 0 ]; then
+        CHANNELS_JSON="${CHANNELS_JSON}, "
     fi
+    CHANNELS_JSON="${CHANNELS_JSON}\"${ENABLED_CHANNELS[$i]}\""
 done
+CHANNELS_JSON="${CHANNELS_JSON}]"
 
-# Write settings.json
+# Build channel configs with tokens
+DISCORD_TOKEN="${TOKENS[discord]:-}"
+TELEGRAM_TOKEN="${TOKENS[telegram]:-}"
+
+# Write settings.json with layered structure
 cat > "$SETTINGS_FILE" <<EOF
 {
-  "channels": "${CHANNELS_CSV}",
-  "model": "${MODEL}",
-${TOKENS_JSON}  "heartbeat_interval": ${HEARTBEAT_INTERVAL}
+  "channels": {
+    "enabled": ${CHANNELS_JSON},
+    "discord": {
+      "bot_token": "${DISCORD_TOKEN}"
+    },
+    "telegram": {
+      "bot_token": "${TELEGRAM_TOKEN}"
+    },
+    "whatsapp": {}
+  },
+  "models": {
+    "anthropic": {
+      "model": "${MODEL}"
+    }
+  },
+  "monitoring": {
+    "heartbeat_interval": ${HEARTBEAT_INTERVAL}
+  }
 }
 EOF
 

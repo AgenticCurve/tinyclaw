@@ -338,6 +338,7 @@ All configuration is stored in `.tinyclaw/settings.json`:
 ```
 
 To reconfigure, run:
+
 ```bash
 ./tinyclaw.sh setup
 ```
@@ -415,13 +416,13 @@ Discord, WhatsApp, and Telegram work seamlessly together. All channels share the
 // new-channel-client.ts
 // Write to queue
 fs.writeFileSync(
-  '.tinyclaw/queue/incoming/channel_<id>.json',
+  ".tinyclaw/queue/incoming/channel_<id>.json",
   JSON.stringify({
-    channel: 'channel-name',
+    channel: "channel-name",
     message,
     sender,
-    timestamp
-  })
+    timestamp,
+  }),
 );
 
 // Read responses from outgoing queue
@@ -462,6 +463,7 @@ WhatsApp session persists across restarts:
 ### Bash version error on macOS
 
 If you see:
+
 ```
 Error: This script requires bash 4.0 or higher (you have 3.2.57)
 ```
@@ -583,6 +585,10 @@ Claude: [fixes and commits]
 - CLI for scripts
 
 All channels share the same Claude conversation!
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=jlia0/tinyclaw&type=date&legend=top-left)](https://www.star-history.com/#jlia0/tinyclaw&type=date&legend=top-left)
 
 ## 🙏 Credits
 

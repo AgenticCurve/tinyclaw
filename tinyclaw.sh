@@ -82,22 +82,32 @@ load_settings() {
         return 1
     fi
 
-    # Read channels (comma-separated list)
-    local channels_csv
-    channels_csv=$(grep -o '"channels"[[:space:]]*:[[:space:]]*"[^"]*"' "$SETTINGS_FILE" | cut -d'"' -f4)
+    # Check if jq is available for JSON parsing
+    if ! command -v jq &> /dev/null; then
+        echo -e "${RED}Error: jq is required for parsing settings${NC}"
+        echo "Install with: brew install jq (macOS) or apt-get install jq (Linux)"
+        return 1
+    fi
 
-    if [ -z "$channels_csv" ]; then
+    # Read enabled channels array
+    local channels_json
+    channels_json=$(jq -r '.channels.enabled[]' "$SETTINGS_FILE" 2>/dev/null)
+
+    if [ -z "$channels_json" ]; then
         return 1
     fi
 
     # Parse into array
-    IFS=',' read -ra ACTIVE_CHANNELS <<< "$channels_csv"
+    ACTIVE_CHANNELS=()
+    while IFS= read -r ch; do
+        ACTIVE_CHANNELS+=("$ch")
+    done <<< "$channels_json"
 
-    # Load tokens for each channel
+    # Load tokens for each channel from nested structure
     for ch in "${ALL_CHANNELS[@]}"; do
         local token_key="${CHANNEL_TOKEN_KEY[$ch]:-}"
         if [ -n "$token_key" ]; then
-            CHANNEL_TOKENS[$ch]=$(grep -o "\"${token_key}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$SETTINGS_FILE" | cut -d'"' -f4)
+            CHANNEL_TOKENS[$ch]=$(jq -r ".channels.${ch}.bot_token // empty" "$SETTINGS_FILE" 2>/dev/null)
         fi
     done
 
@@ -547,8 +557,13 @@ case "${1:-}" in
     model)
         if [ -z "$2" ]; then
             if [ -f "$SETTINGS_FILE" ]; then
-                CURRENT_MODEL=$(grep -o '"model"[[:space:]]*:[[:space:]]*"[^"]*"' "$SETTINGS_FILE" | cut -d'"' -f4)
-                echo -e "${BLUE}Current model: ${GREEN}$CURRENT_MODEL${NC}"
+                CURRENT_MODEL=$(jq -r '.models.anthropic.model // empty' "$SETTINGS_FILE" 2>/dev/null)
+                if [ -n "$CURRENT_MODEL" ]; then
+                    echo -e "${BLUE}Current model: ${GREEN}$CURRENT_MODEL${NC}"
+                else
+                    echo -e "${RED}No model configured${NC}"
+                    exit 1
+                fi
             else
                 echo -e "${RED}No settings file found${NC}"
                 exit 1
@@ -561,11 +576,9 @@ case "${1:-}" in
                         exit 1
                     fi
 
-                    if [[ "$OSTYPE" == "darwin"* ]]; then
-                        sed -i '' "s/\"model\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"model\": \"$2\"/" "$SETTINGS_FILE"
-                    else
-                        sed -i "s/\"model\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"model\": \"$2\"/" "$SETTINGS_FILE"
-                    fi
+                    # Update model using jq
+                    local tmp_file="$SETTINGS_FILE.tmp"
+                    jq ".models.anthropic.model = \"$2\"" "$SETTINGS_FILE" > "$tmp_file" && mv "$tmp_file" "$SETTINGS_FILE"
 
                     echo -e "${GREEN}✓ Model switched to: $2${NC}"
                     echo ""

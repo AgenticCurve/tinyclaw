@@ -9,7 +9,9 @@ SETTINGS_FILE="$SCRIPT_DIR/.tinyclaw/settings.json"
 
 # Read interval from settings.json, default to 3600
 if [ -f "$SETTINGS_FILE" ]; then
-    INTERVAL=$(grep -o '"heartbeat_interval"[[:space:]]*:[[:space:]]*[0-9]*' "$SETTINGS_FILE" | grep -o '[0-9]*$')
+    if command -v jq &> /dev/null; then
+        INTERVAL=$(jq -r '.monitoring.heartbeat_interval // empty' "$SETTINGS_FILE" 2>/dev/null)
+    fi
 fi
 INTERVAL=${INTERVAL:-3600}
 

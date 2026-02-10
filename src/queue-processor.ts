@@ -14,7 +14,7 @@ const QUEUE_OUTGOING = path.join(SCRIPT_DIR, '.tinyclaw/queue/outgoing');
 const QUEUE_PROCESSING = path.join(SCRIPT_DIR, '.tinyclaw/queue/processing');
 const LOG_FILE = path.join(SCRIPT_DIR, '.tinyclaw/logs/queue.log');
 const RESET_FLAG = path.join(SCRIPT_DIR, '.tinyclaw/reset_flag');
-const MODEL_CONFIG = path.join(SCRIPT_DIR, '.tinyclaw/model');
+const SETTINGS_FILE = path.join(SCRIPT_DIR, '.tinyclaw/settings.json');
 
 // Model name mapping
 const MODEL_IDS: Record<string, string> = {
@@ -22,12 +22,33 @@ const MODEL_IDS: Record<string, string> = {
     'opus': 'claude-opus-4-6',
 };
 
+interface Settings {
+    channels?: {
+        enabled?: string[];
+        discord?: { bot_token?: string };
+        telegram?: { bot_token?: string };
+        whatsapp?: {};
+    };
+    models?: {
+        anthropic?: {
+            model?: string;
+        };
+    };
+    monitoring?: {
+        heartbeat_interval?: number;
+    };
+}
+
 function getModelFlag(): string {
     try {
-        const model = fs.readFileSync(MODEL_CONFIG, 'utf8').trim();
-        const modelId = MODEL_IDS[model];
-        if (modelId) {
-            return `--model ${modelId} `;
+        const settingsData = fs.readFileSync(SETTINGS_FILE, 'utf8');
+        const settings: Settings = JSON.parse(settingsData);
+        const model = settings?.models?.anthropic?.model;
+        if (model) {
+            const modelId = MODEL_IDS[model];
+            if (modelId) {
+                return `--model ${modelId} `;
+            }
         }
     } catch { }
     return '';
