@@ -16,12 +16,35 @@ const LOG_FILE = path.join(SCRIPT_DIR, '.tinyclaw/logs/queue.log');
 const RESET_FLAG = path.join(SCRIPT_DIR, '.tinyclaw/reset_flag');
 const SETTINGS_FILE = path.join(SCRIPT_DIR, '.tinyclaw/settings.json');
 
+// Get chats root directory from settings or use default
+function getChatsRootDir(): string {
+    try {
+        const settingsData = fs.readFileSync(SETTINGS_FILE, 'utf8');
+        const settings: Settings = JSON.parse(settingsData);
+        const chatsDir = settings?.chats_root_dir;
+
+        if (chatsDir) {
+            // Expand ~ to home directory
+            const expandedPath = chatsDir.startsWith('~/')
+                ? path.join(require('os').homedir(), chatsDir.slice(2))
+                : chatsDir;
+            return path.resolve(expandedPath);
+        }
+    } catch (error) {
+        // Settings file doesn't exist yet or can't be read
+    }
+
+    // Default to ~/chats_with_claude
+    return path.join(require('os').homedir(), 'chats_with_claude');
+}
+
 // Root directory for all Claude conversations (per-user sessions)
-const CHATS_ROOT_DIR = '/Users/pb/notes/chats_with_claude';
+const CHATS_ROOT_DIR = getChatsRootDir();
 
 // Ensure chats root directory exists
 if (!fs.existsSync(CHATS_ROOT_DIR)) {
     fs.mkdirSync(CHATS_ROOT_DIR, { recursive: true });
+    console.log(`Created chats directory: ${CHATS_ROOT_DIR}`);
 }
 
 // Model name mapping
@@ -45,6 +68,7 @@ interface Settings {
     monitoring?: {
         heartbeat_interval?: number;
     };
+    chats_root_dir?: string;
 }
 
 function getModelFlag(): string {

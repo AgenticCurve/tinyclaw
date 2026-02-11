@@ -9,11 +9,36 @@
 
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { execSync } from 'child_process';
 
-const CHATS_ROOT_DIR = '/Users/pb/notes/chats_with_claude';
 const SCRIPT_DIR = path.resolve(__dirname, '..');
+const SETTINGS_FILE = path.join(SCRIPT_DIR, '.tinyclaw/settings.json');
 const RESET_FLAGS_DIR = path.join(SCRIPT_DIR, '.tinyclaw/reset_flags');
+
+// Get chats root directory from settings or use default
+function getChatsRootDir(): string {
+    try {
+        const settingsData = fs.readFileSync(SETTINGS_FILE, 'utf8');
+        const settings = JSON.parse(settingsData);
+        const chatsDir = settings?.chats_root_dir;
+
+        if (chatsDir) {
+            // Expand ~ to home directory
+            const expandedPath = chatsDir.startsWith('~/')
+                ? path.join(os.homedir(), chatsDir.slice(2))
+                : chatsDir;
+            return path.resolve(expandedPath);
+        }
+    } catch (error) {
+        // Settings file doesn't exist yet or can't be read
+    }
+
+    // Default to ~/chats_with_claude
+    return path.join(os.homedir(), 'chats_with_claude');
+}
+
+const CHATS_ROOT_DIR = getChatsRootDir();
 
 interface SessionInfo {
     channel: string;
@@ -103,11 +128,13 @@ function listCommand() {
 
     if (sessions.length === 0) {
         console.log('\nNo active sessions yet.');
-        console.log('Sessions will be created when users send messages.\n');
+        console.log('Sessions will be created when users send messages.');
+        console.log(`\nChats directory: ${CHATS_ROOT_DIR}\n`);
         return;
     }
 
-    console.log(`\n📁 Active Sessions (${sessions.length}):\n`);
+    console.log(`\n📁 Active Sessions (${sessions.length}):`);
+    console.log(`   Location: ${CHATS_ROOT_DIR}\n`);
 
     const grouped = sessions.reduce((acc, session) => {
         if (!acc[session.channel]) {

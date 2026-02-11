@@ -35,7 +35,7 @@ TinyClaw is a lightweight wrapper around [Claude Code](https://claude.com/claude
 └─────────────────┘  │   └──────────────┘
                      │        ↓
                      │   Per-User Session:
-                     │   /Users/pb/notes/chats_with_claude/
+                     │   ~/chats_with_claude/
                      │   ├── telegram_123456789/
                      │   ├── whatsapp_1234567890/
                      │   └── discord_987654321/
@@ -110,6 +110,22 @@ Which Claude model?
 Choose [1-2]: 1
 
 ✓ Model: sonnet
+
+Where should user conversations be stored?
+(Each user gets a private Claude session in this directory)
+
+Directory [default: ~/chats_with_claude]: ~/chats_with_claude
+
+✓ Chats directory: ~/chats_with_claude
+
+Heartbeat interval (seconds)?
+(How often Claude checks in proactively)
+
+Interval [default: 3600]: 3600
+
+✓ Heartbeat interval: 3600s
+
+✓ Configuration saved to .tinyclaw/settings.json
 ```
 
 ### Discord Setup
@@ -206,14 +222,16 @@ Each user (identified by channel + user ID) gets their own Claude session:
 
 ```
 WhatsApp User: +1234567890
-  → /Users/pb/notes/chats_with_claude/whatsapp_1234567890_c_us/
+  → ~/chats_with_claude/whatsapp_1234567890_c_us/
 
 Telegram User: 123456789
-  → /Users/pb/notes/chats_with_claude/telegram_123456789/
+  → ~/chats_with_claude/telegram_123456789/
 
 Discord User: 987654321
-  → /Users/pb/notes/chats_with_claude/discord_987654321/
+  → ~/chats_with_claude/discord_987654321/
 ```
+
+(Default location: `~/chats_with_claude/`, configurable during setup)
 
 **Example:**
 ```
@@ -229,9 +247,11 @@ Claude: "Your name is Alice."
 
 ### Session Storage
 
-All sessions are stored in:
+All sessions are stored in a configurable directory (default: `~/chats_with_claude/`):
+
+You can choose the directory during setup, or it defaults to:
 ```
-/Users/pb/notes/chats_with_claude/
+~/chats_with_claude/
 ```
 
 This is separate from the TinyClaw codebase, making it easy to:
@@ -239,6 +259,7 @@ This is separate from the TinyClaw codebase, making it easy to:
 - Archive old sessions
 - Share conversation logs
 - Keep conversations organized
+- Store on external drive or cloud sync folder
 
 ### Session Management Commands
 
@@ -275,15 +296,17 @@ npm run sessions -- reset telegram 123456789
 ### Backup Sessions
 
 ```bash
-# Backup all sessions
-tar -czf chats_backup_$(date +%Y%m%d).tar.gz /Users/pb/notes/chats_with_claude/
+# Backup all sessions (replace path with your chats directory)
+tar -czf chats_backup_$(date +%Y%m%d).tar.gz ~/chats_with_claude/
 
 # Restore sessions
-tar -xzf chats_backup_20260211.tar.gz -C /
+tar -xzf chats_backup_20260211.tar.gz -C ~/
 
 # Backup single user
-tar -czf user_backup.tar.gz /Users/pb/notes/chats_with_claude/telegram_123456789/
+tar -czf user_backup.tar.gz ~/chats_with_claude/telegram_123456789/
 ```
+
+**Note**: Your actual chats directory is shown when you run `npm run sessions -- list`
 
 ## 📋 Commands
 
@@ -373,7 +396,7 @@ Client writes to:
 queue-processor.ts picks it up
        ↓
 Gets user session directory:
-  /Users/pb/notes/chats_with_claude/{channel}_{senderId}/
+  ~/chats_with_claude/{channel}_{senderId}/
        ↓
 Runs: cd {session_dir} && claude -c -p "message"
        ↓
@@ -426,7 +449,7 @@ tinyclaw/
 ├── tinyclaw.sh           # Main script
 └── heartbeat-cron.sh     # Health checks
 
-/Users/pb/notes/chats_with_claude/  # User sessions (separate)
+~/chats_with_claude/  # User sessions (configurable, separate)
 ├── telegram_123456789/
 │   ├── session-abc.jsonl
 │   └── memory/
@@ -446,11 +469,25 @@ All configuration is stored in `.tinyclaw/settings.json`:
 
 ```json
 {
-  "channels": "discord,whatsapp,telegram",
-  "model": "sonnet",
-  "discord_bot_token": "YOUR_DISCORD_TOKEN_HERE",
-  "telegram_bot_token": "YOUR_TELEGRAM_TOKEN_HERE",
-  "heartbeat_interval": 3600
+  "channels": {
+    "enabled": ["discord", "whatsapp", "telegram"],
+    "discord": {
+      "bot_token": "YOUR_DISCORD_TOKEN_HERE"
+    },
+    "telegram": {
+      "bot_token": "YOUR_TELEGRAM_TOKEN_HERE"
+    },
+    "whatsapp": {}
+  },
+  "models": {
+    "anthropic": {
+      "model": "sonnet"
+    }
+  },
+  "monitoring": {
+    "heartbeat_interval": 3600
+  },
+  "chats_root_dir": "~/chats_with_claude"
 }
 ```
 
@@ -514,11 +551,11 @@ watch -n 1 'ls -lh .tinyclaw/queue/outgoing/'
 ### Monitor Sessions
 
 ```bash
-# List active sessions
+# List active sessions (shows your chats directory)
 npm run sessions -- list
 
 # Watch session directory
-watch -n 1 'du -sh /Users/pb/notes/chats_with_claude/*'
+watch -n 1 'du -sh ~/chats_with_claude/*'
 ```
 
 ## 🎨 Features
@@ -684,10 +721,10 @@ npm run sessions -- view telegram 123456789
 
 ```bash
 # Check if session directory exists
-ls -la /Users/pb/notes/chats_with_claude/
+ls -la ~/chats_with_claude/
 
 # Check permissions
-ls -la /Users/pb/notes/
+ls -la ~/
 
 # View session files
 npm run sessions -- view telegram 123456789

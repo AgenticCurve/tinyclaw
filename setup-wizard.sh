@@ -98,6 +98,16 @@ esac
 echo -e "${GREEN}✓ Model: $MODEL${NC}"
 echo ""
 
+# Chats directory
+echo "Where should user conversations be stored?"
+echo -e "${YELLOW}(Each user gets a private Claude session in this directory)${NC}"
+echo ""
+read -rp "Directory [default: ~/chats_with_claude]: " CHATS_DIR_INPUT
+CHATS_ROOT_DIR=${CHATS_DIR_INPUT:-~/chats_with_claude}
+
+echo -e "${GREEN}✓ Chats directory: ${CHATS_ROOT_DIR}${NC}"
+echo ""
+
 # Heartbeat interval
 echo "Heartbeat interval (seconds)?"
 echo -e "${YELLOW}(How often Claude checks in proactively)${NC}"
@@ -146,7 +156,8 @@ cat > "$SETTINGS_FILE" <<EOF
   },
   "monitoring": {
     "heartbeat_interval": ${HEARTBEAT_INTERVAL}
-  }
+  },
+  "chats_root_dir": "${CHATS_ROOT_DIR}"
 }
 EOF
 
