@@ -510,6 +510,38 @@ channels_reset() {
     fi
 }
 
+# --- Parse arguments ---
+
+# Parse optional flags before command
+CHATS_DIR=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --chats-dir)
+            CHATS_DIR="$2"
+            shift 2
+            ;;
+        *)
+            # Not a flag, break to process as command
+            break
+            ;;
+    esac
+done
+
+# If chats directory was specified, update settings
+if [ -n "$CHATS_DIR" ]; then
+    if [ ! -f "$SETTINGS_FILE" ]; then
+        echo -e "${RED}Error: No settings file found. Run setup first.${NC}"
+        exit 1
+    fi
+
+    # Update chats_root_dir using jq
+    local tmp_file="$SETTINGS_FILE.tmp"
+    jq ".chats_root_dir = \"$CHATS_DIR\"" "$SETTINGS_FILE" > "$tmp_file" && mv "$tmp_file" "$SETTINGS_FILE"
+
+    echo -e "${GREEN}✓ Chats directory set to: $CHATS_DIR${NC}"
+    echo ""
+fi
+
 # --- Main command dispatch ---
 
 case "${1:-}" in
@@ -606,7 +638,10 @@ case "${1:-}" in
         local_names=$(IFS='|'; echo "${ALL_CHANNELS[*]}")
         echo -e "${BLUE}TinyClaw - Claude Code + Messaging Channels${NC}"
         echo ""
-        echo "Usage: $0 {start|stop|restart|status|setup|send|logs|reset|channels|model|attach}"
+        echo "Usage: $0 [--chats-dir <path>] {start|stop|restart|status|setup|send|logs|reset|channels|model|attach}"
+        echo ""
+        echo "Options:"
+        echo "  --chats-dir <path>       Set chats directory (e.g., ~/my_chats)"
         echo ""
         echo "Commands:"
         echo "  start                    Start TinyClaw"
@@ -623,6 +658,8 @@ case "${1:-}" in
         echo ""
         echo "Examples:"
         echo "  $0 start"
+        echo "  $0 --chats-dir ~/my_conversations start"
+        echo "  $0 --chats-dir ~/Dropbox/claude_chats restart"
         echo "  $0 status"
         echo "  $0 model opus"
         echo "  $0 send 'What time is it?'"

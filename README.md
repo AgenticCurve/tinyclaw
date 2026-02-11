@@ -249,10 +249,13 @@ Claude: "Your name is Alice."
 
 All sessions are stored in a configurable directory (default: `~/chats_with_claude/`):
 
-You can choose the directory during setup, or it defaults to:
-```
-~/chats_with_claude/
-```
+You can choose the directory:
+1. **During setup** - Setup wizard asks for the location
+2. **Command-line argument** - Pass `--chats-dir` when starting:
+   ```bash
+   ./tinyclaw.sh --chats-dir ~/my_chats start
+   ```
+3. **Default** - If not specified, uses `~/chats_with_claude/`
 
 This is separate from the TinyClaw codebase, making it easy to:
 - Back up all conversations
@@ -313,6 +316,11 @@ tar -czf user_backup.tar.gz ~/chats_with_claude/telegram_123456789/
 ```bash
 # Start TinyClaw
 ./tinyclaw.sh start
+
+# Start with custom chats directory
+./tinyclaw.sh --chats-dir ~/my_conversations start
+./tinyclaw.sh --chats-dir ~/Dropbox/claude_chats start
+./tinyclaw.sh --chats-dir ~/Documents/chats restart
 
 # Run setup wizard (change channels/model/heartbeat)
 ./tinyclaw.sh setup
