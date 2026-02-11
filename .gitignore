@@ -6,10 +6,12 @@ dist/
 
 # TinyClaw runtime files
 .tinyclaw/logs/
-.tinyclaw/channels
+.tinyclaw/channels/
 .tinyclaw/whatsapp-session/
 .tinyclaw/queue/
+.tinyclaw/pairing/
 .tinyclaw/reset_flag
+.tinyclaw/reset_flags/
 .tinyclaw/settings.json
 .wwebjs_cache
 *.log
