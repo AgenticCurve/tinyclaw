@@ -16,6 +16,14 @@ const LOG_FILE = path.join(SCRIPT_DIR, '.tinyclaw/logs/queue.log');
 const RESET_FLAG = path.join(SCRIPT_DIR, '.tinyclaw/reset_flag');
 const SETTINGS_FILE = path.join(SCRIPT_DIR, '.tinyclaw/settings.json');
 
+// Root directory for all Claude conversations (per-user sessions)
+const CHATS_ROOT_DIR = '/Users/pb/notes/chats_with_claude';
+
+// Ensure chats root directory exists
+if (!fs.existsSync(CHATS_ROOT_DIR)) {
+    fs.mkdirSync(CHATS_ROOT_DIR, { recursive: true });
+}
+
 // Model name mapping
 const MODEL_IDS: Record<string, string> = {
     'sonnet': 'claude-sonnet-4-5',
@@ -55,7 +63,8 @@ function getModelFlag(): string {
 }
 
 // Ensure directories exist
-[QUEUE_INCOMING, QUEUE_OUTGOING, QUEUE_PROCESSING, path.dirname(LOG_FILE)].forEach(dir => {
+const RESET_FLAGS_DIR = path.join(SCRIPT_DIR, '.tinyclaw/reset_flags');
+[QUEUE_INCOMING, QUEUE_OUTGOING, QUEUE_PROCESSING, path.dirname(LOG_FILE), RESET_FLAGS_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
@@ -64,7 +73,7 @@ function getModelFlag(): string {
 interface MessageData {
     channel: string;
     sender: string;
-    senderId?: string;
+    senderId: string;
     message: string;
     timestamp: number;
     messageId: string;
@@ -87,6 +96,31 @@ function log(level: string, message: string): void {
     fs.appendFileSync(LOG_FILE, logMessage);
 }
 
+/**
+ * Get or create user session directory
+ * Format: /Users/pb/notes/chats_with_claude/{channel}_{senderId}/
+ */
+function getUserSessionDir(channel: string, senderId: string): string {
+    // Sanitize senderId for filesystem (remove special characters)
+    const safeSenderId = senderId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const sessionDir = path.join(CHATS_ROOT_DIR, `${channel}_${safeSenderId}`);
+
+    if (!fs.existsSync(sessionDir)) {
+        fs.mkdirSync(sessionDir, { recursive: true });
+        log('INFO', `📁 Created new session directory: ${sessionDir}`);
+    }
+
+    return sessionDir;
+}
+
+/**
+ * Get user-specific reset flag path
+ */
+function getUserResetFlag(channel: string, senderId: string): string {
+    const safeSenderId = senderId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return path.join(SCRIPT_DIR, `.tinyclaw/reset_flags/${channel}_${safeSenderId}`);
+}
+
 // Process a single message
 async function processMessage(messageFile: string): Promise<void> {
     const processingFile = path.join(QUEUE_PROCESSING, path.basename(messageFile));
@@ -97,25 +131,40 @@ async function processMessage(messageFile: string): Promise<void> {
 
         // Read message
         const messageData: MessageData = JSON.parse(fs.readFileSync(processingFile, 'utf8'));
-        const { channel, sender, message, timestamp, messageId } = messageData;
+        const { channel, sender, senderId, message, timestamp, messageId } = messageData;
 
-        log('INFO', `Processing [${channel}] from ${sender}: ${message.substring(0, 50)}...`);
+        if (!senderId) {
+            throw new Error('senderId is required for message processing');
+        }
 
-        // Check if we should reset conversation (start fresh without -c)
-        const shouldReset = fs.existsSync(RESET_FLAG);
+        log('INFO', `Processing [${channel}] from ${sender} (${senderId}): ${message.substring(0, 50)}...`);
+
+        // Get user-specific session directory
+        const sessionDir = getUserSessionDir(channel, senderId);
+
+        // Check if we should reset conversation for this user
+        const userResetFlag = getUserResetFlag(channel, senderId);
+        const shouldReset = fs.existsSync(userResetFlag) || fs.existsSync(RESET_FLAG);
         const continueFlag = shouldReset ? '' : '-c ';
 
         if (shouldReset) {
-            log('INFO', '🔄 Resetting conversation (starting fresh without -c)');
-            fs.unlinkSync(RESET_FLAG);
+            log('INFO', `🔄 Resetting conversation for ${sender} (starting fresh without -c)`);
+            // Remove user-specific reset flag
+            if (fs.existsSync(userResetFlag)) {
+                fs.unlinkSync(userResetFlag);
+            }
+            // Remove global reset flag
+            if (fs.existsSync(RESET_FLAG)) {
+                fs.unlinkSync(RESET_FLAG);
+            }
         }
 
-        // Call Claude
+        // Call Claude from user-specific directory
         let response: string;
         try {
             const modelFlag = getModelFlag();
             response = execSync(
-                `cd "${SCRIPT_DIR}" && claude --dangerously-skip-permissions ${modelFlag}${continueFlag}-p "${message.replace(/"/g, '\\"')}"`,
+                `cd "${sessionDir}" && claude --dangerously-skip-permissions ${modelFlag}${continueFlag}-p "${message.replace(/"/g, '\\"')}"`,
                 {
                     encoding: "utf-8",
                     timeout: 0, // No timeout - wait for Claude to finish (agents can run long)

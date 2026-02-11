@@ -1,18 +1,20 @@
 # TinyClaw 🦞
 
-Minimal multi-channel AI assistant with Discord, WhatsApp, and Telegram integration.
+Minimal multi-channel AI assistant with Discord, WhatsApp, and Telegram integration. Each user gets their own private conversation with Claude.
 
 ## 🎯 What is TinyClaw?
 
 TinyClaw is a lightweight wrapper around [Claude Code](https://claude.com/claude-code) that:
 
 - ✅ Connects Discord, WhatsApp, and Telegram
+- ✅ **Per-user session isolation** - each user has a private conversation
+- ✅ **Access control** - pairing system to approve users
 - ✅ Processes messages sequentially (no race conditions)
-- ✅ Maintains conversation context
+- ✅ Maintains conversation context per user
 - ✅ Runs 24/7 in tmux
 - ✅ Extensible multi-channel architecture
 
-**Key innovation:** File-based queue system prevents race conditions and enables seamless multi-channel support.
+**Key innovation:** File-based queue system + per-user Claude sessions enables seamless multi-channel support with complete privacy.
 
 ## 📐 Architecture
 
@@ -31,6 +33,12 @@ TinyClaw is a lightweight wrapper around [Claude Code](https://claude.com/claude
 │  Telegram       │──┤   │   Queue      │
 │  Client         │  │   │  Processor   │
 └─────────────────┘  │   └──────────────┘
+                     │        ↓
+                     │   Per-User Session:
+                     │   /Users/pb/notes/chats_with_claude/
+                     │   ├── telegram_123456789/
+                     │   ├── whatsapp_1234567890/
+                     │   └── discord_987654321/
                      │        ↓
                      │   claude -c -p
                      │        ↓
@@ -102,15 +110,6 @@ Which Claude model?
 Choose [1-2]: 1
 
 ✓ Model: sonnet
-
-Heartbeat interval (seconds)?
-(How often Claude checks in proactively)
-
-Interval [default: 3600]: 3600
-
-✓ Heartbeat interval: 3600s
-
-✓ Configuration saved to .tinyclaw/settings.json
 ```
 
 ### Discord Setup
@@ -128,7 +127,7 @@ Interval [default: 3600]: 3600
 2. Send `/newbot` and follow the prompts
 3. Choose a name and username for your bot
 4. Copy the bot token provided by BotFather
-5. Start a chat with your bot or add it to a group
+5. Start a chat with your bot
 
 ### WhatsApp Setup
 
@@ -147,15 +146,144 @@ After starting, a QR code will appear if WhatsApp is enabled:
 
 Scan it with your phone. **Done!** 🎉
 
-### Test It
+## 🔐 Access Control (Pairing System)
 
-**Discord:** Send a DM to your bot or mention it in a channel
+TinyClaw includes a pairing system to control who can interact with your Claude instance. When someone first messages your bot, they must send `/start` to get a pairing code.
 
-**WhatsApp:** Send a message to the connected number
+### How It Works
 
-**Telegram:** Send a message to your bot
+1. **First Contact**: User sends `/start` command
+2. **Pairing Code Sent**: They receive an 8-character code
+3. **Other Messages Ignored**: Any other message from unauthorized users is silently ignored
+4. **Approval**: You approve using the CLI
+5. **Access Granted**: Future messages are processed
 
-You'll get a response! 🤖
+**Note**: Unauthorized users must send `/start` to get a pairing code. All other messages are ignored.
+
+### What Users See
+
+When an unauthorized user sends `/start`:
+
+```
+🔒 TinyClaw: Access Required
+
+Your telegram ID: 123456789
+Pairing code: ABC12345
+
+Ask the bot owner to approve access:
+  npm run pairing -- approve ABC12345
+
+This code expires in 1 hour.
+```
+
+### Pairing Commands
+
+```bash
+# List pending pairing requests
+npm run pairing -- list
+
+# Approve a user
+npm run pairing -- approve ABC12345
+
+# View all approved users
+npm run pairing -- allowlist
+```
+
+### Pairing Code Details
+
+- **Format**: 8 characters, uppercase letters and numbers
+- **No Ambiguous Characters**: Excludes 0, O, 1, and I to prevent confusion
+- **Expiration**: Codes expire after 1 hour
+- **Limit**: Maximum 3 pending requests per channel at a time
+
+## 💬 Per-User Sessions
+
+Each user gets their own private Claude conversation that persists across messages. Sessions are isolated - users cannot see each other's conversations.
+
+### Session Isolation
+
+Each user (identified by channel + user ID) gets their own Claude session:
+
+```
+WhatsApp User: +1234567890
+  → /Users/pb/notes/chats_with_claude/whatsapp_1234567890_c_us/
+
+Telegram User: 123456789
+  → /Users/pb/notes/chats_with_claude/telegram_123456789/
+
+Discord User: 987654321
+  → /Users/pb/notes/chats_with_claude/discord_987654321/
+```
+
+**Example:**
+```
+Telegram User A: "My name is Alice"
+Claude: "Nice to meet you, Alice!"
+
+WhatsApp User B: "What's my name?"
+Claude: "I don't have information about your name yet."
+
+Telegram User A (later): "What's my name?"
+Claude: "Your name is Alice."
+```
+
+### Session Storage
+
+All sessions are stored in:
+```
+/Users/pb/notes/chats_with_claude/
+```
+
+This is separate from the TinyClaw codebase, making it easy to:
+- Back up all conversations
+- Archive old sessions
+- Share conversation logs
+- Keep conversations organized
+
+### Session Management Commands
+
+```bash
+# List all active user sessions
+npm run sessions -- list
+
+# View a user's session details
+npm run sessions -- view telegram 123456789
+
+# Reset a user's conversation
+npm run sessions -- reset telegram 123456789
+```
+
+**List Sessions Output:**
+```
+📁 Active Sessions (3):
+
+  TELEGRAM (2):
+    • 123456789
+      Last active: 2h ago
+      Size: 245KB
+
+    • 987654321
+      Last active: 1d ago
+      Size: 1.2MB
+
+  WHATSAPP (1):
+    • 1234567890_c_us
+      Last active: 30m ago
+      Size: 512KB
+```
+
+### Backup Sessions
+
+```bash
+# Backup all sessions
+tar -czf chats_backup_$(date +%Y%m%d).tar.gz /Users/pb/notes/chats_with_claude/
+
+# Restore sessions
+tar -xzf chats_backup_20260211.tar.gz -C /
+
+# Backup single user
+tar -czf user_backup.tar.gz /Users/pb/notes/chats_with_claude/telegram_123456789/
+```
 
 ## 📋 Commands
 
@@ -172,7 +300,7 @@ You'll get a response! 🤖
 # Send manual message
 ./tinyclaw.sh send "What's the weather?"
 
-# Reset conversation
+# Reset conversation (per-user)
 ./tinyclaw.sh reset
 
 # Reset channel authentication
@@ -192,6 +320,16 @@ You'll get a response! 🤖
 ./tinyclaw.sh logs queue      # Queue processing
 ./tinyclaw.sh logs heartbeat  # Heartbeat checks
 
+# Session management
+npm run sessions -- list                    # List all user sessions
+npm run sessions -- view telegram 123456789 # View session details
+npm run sessions -- reset telegram 123456789 # Reset user conversation
+
+# Pairing management
+npm run pairing -- list          # List pending pairing requests
+npm run pairing -- approve CODE  # Approve a user
+npm run pairing -- allowlist     # View approved users
+
 # Attach to tmux
 ./tinyclaw.sh attach
 
@@ -202,70 +340,42 @@ You'll get a response! 🤖
 ./tinyclaw.sh stop
 ```
 
-## 🔧 Components
+## 🔄 Reset Conversation
 
-### 1. setup-wizard.sh
+### Via CLI (All Users)
 
-- Interactive setup on first run
-- Configures channels (Discord/WhatsApp/Telegram)
-- Collects bot tokens for enabled channels
-- Selects Claude model
-- Writes to `.tinyclaw/settings.json`
+```bash
+./tinyclaw.sh reset
+```
 
-### 2. discord-client.ts
+### Via Chat (Per User)
 
-- Connects to Discord via bot token
-- Listens for DMs and mentions
-- Writes incoming messages to queue
-- Reads responses from queue
-- Sends replies back
+Send: `!reset` or `/reset`
 
-### 3. whatsapp-client.ts
+Next message starts fresh (no conversation history). Only resets your own conversation.
 
-- Connects to WhatsApp via QR code
-- Writes incoming messages to queue
-- Reads responses from queue
-- Sends replies back
+### Reset Specific User
 
-### 4. telegram-client.ts
-
-- Connects to Telegram via bot token
-- Listens for messages
-- Writes incoming messages to queue
-- Reads responses from queue
-- Sends replies back
-
-### 5. queue-processor.ts
-
-- Polls incoming queue
-- Processes **ONE message at a time**
-- Calls `claude -c -p`
-- Waits indefinitely for Claude to finish (supports long-running agent tasks)
-- Writes responses to outgoing queue
-
-### 6. heartbeat-cron.sh
-
-- Runs every 5 minutes
-- Sends heartbeat via queue
-- Keeps conversation active
-
-### 7. tinyclaw.sh
-
-- Main orchestrator
-- Manages tmux session
-- CLI interface
+```bash
+npm run sessions -- reset telegram 123456789
+```
 
 ## 💬 Message Flow
 
 ```
 Message arrives (Discord/WhatsApp/Telegram)
        ↓
+Client checks if user is approved (pairing)
+       ↓
 Client writes to:
   .tinyclaw/queue/incoming/{channel}_<id>.json
        ↓
 queue-processor.ts picks it up
        ↓
-Runs: claude -c -p "message"
+Gets user session directory:
+  /Users/pb/notes/chats_with_claude/{channel}_{senderId}/
+       ↓
+Runs: cd {session_dir} && claude -c -p "message"
        ↓
 Writes to:
   .tinyclaw/queue/outgoing/{channel}_<id>.json
@@ -288,9 +398,16 @@ tinyclaw/
 │   │   ├── incoming/     # New messages
 │   │   ├── processing/   # Being processed
 │   │   └── outgoing/     # Responses
+│   ├── pairing/          # Access control
+│   │   ├── telegram-pending.json
+│   │   ├── whatsapp-pending.json
+│   │   ├── discord-pending.json
+│   │   └── allowlist.json
+│   ├── reset_flags/      # Per-user reset flags
 │   ├── logs/
 │   │   ├── discord.log
 │   │   ├── whatsapp.log
+│   │   ├── telegram.log
 │   │   ├── queue.log
 │   │   └── heartbeat.log
 │   ├── channels/         # Runtime channel data
@@ -300,26 +417,26 @@ tinyclaw/
 │   ├── discord-client.ts    # Discord I/O
 │   ├── whatsapp-client.ts   # WhatsApp I/O
 │   ├── telegram-client.ts   # Telegram I/O
-│   └── queue-processor.ts   # Message processing
+│   ├── queue-processor.ts   # Message processing
+│   ├── pairing.ts           # Access control logic
+│   ├── pairing-cli.ts       # Pairing management CLI
+│   └── sessions-cli.ts      # Session management CLI
 ├── dist/                 # TypeScript build output
 ├── setup-wizard.sh       # Interactive setup
 ├── tinyclaw.sh           # Main script
 └── heartbeat-cron.sh     # Health checks
+
+/Users/pb/notes/chats_with_claude/  # User sessions (separate)
+├── telegram_123456789/
+│   ├── session-abc.jsonl
+│   └── memory/
+├── whatsapp_1234567890_c_us/
+│   ├── session-def.jsonl
+│   └── memory/
+└── discord_987654321/
+    ├── session-ghi.jsonl
+    └── memory/
 ```
-
-## 🔄 Reset Conversation
-
-### Via CLI
-
-```bash
-./tinyclaw.sh reset
-```
-
-### Via WhatsApp
-
-Send: `!reset` or `/reset`
-
-Next message starts fresh (no conversation history).
 
 ## ⚙️ Configuration
 
@@ -394,6 +511,16 @@ watch -n 1 'ls -lh .tinyclaw/queue/incoming/'
 watch -n 1 'ls -lh .tinyclaw/queue/outgoing/'
 ```
 
+### Monitor Sessions
+
+```bash
+# List active sessions
+npm run sessions -- list
+
+# Watch session directory
+watch -n 1 'du -sh /Users/pb/notes/chats_with_claude/*'
+```
+
 ## 🎨 Features
 
 ### ✅ No Race Conditions
@@ -408,19 +535,20 @@ Message 3 → Wait → Process → Done
 
 ### ✅ Multi-Channel Support
 
-Discord, WhatsApp, and Telegram work seamlessly together. All channels share the same conversation context!
+Discord, WhatsApp, and Telegram work seamlessly together. Each user gets their own private conversation that persists across channels!
 
 **Adding more channels is easy:**
 
 ```typescript
 // new-channel-client.ts
-// Write to queue
+// Write to queue with senderId
 fs.writeFileSync(
   ".tinyclaw/queue/incoming/channel_<id>.json",
   JSON.stringify({
     channel: "channel-name",
     message,
     sender,
+    senderId,  // Required for session isolation
     timestamp,
   }),
 );
@@ -430,6 +558,13 @@ fs.writeFileSync(
 ```
 
 Queue processor handles all channels automatically!
+
+### ✅ Per-User Privacy
+
+- Each user has a private conversation
+- Users cannot see each other's messages
+- Sessions are completely isolated
+- Easy to manage per user
 
 ### ✅ Clean Responses
 
@@ -441,7 +576,7 @@ Uses `claude -c -p`:
 
 ### ✅ Persistent Sessions
 
-WhatsApp session persists across restarts:
+Sessions persist across restarts:
 
 ```bash
 # First time: Scan QR code
@@ -451,12 +586,19 @@ WhatsApp session persists across restarts:
 ./tinyclaw.sh restart
 ```
 
+Each user's conversation history is maintained in their session directory.
+
 ## 🔐 Security
 
+- **Pairing System**: Only approved users can interact with Claude
+- **Per-User Isolation**: Users cannot see each other's conversations
+- **Session Privacy**: Each user gets their own private Claude session
 - WhatsApp session stored locally in `.tinyclaw/whatsapp-session/`
 - Queue files are local (no network exposure)
 - Each channel handles its own authentication
 - Claude runs with your user permissions
+- Pairing codes expire after 1 hour
+- Maximum 3 pending requests per channel
 
 ## 🐛 Troubleshooting
 
@@ -525,6 +667,32 @@ ls -la .tinyclaw/queue/incoming/
 ./tinyclaw.sh logs queue
 ```
 
+### User not getting responses
+
+```bash
+# Check if user is approved
+npm run pairing -- allowlist
+
+# Check user's session
+npm run sessions -- view telegram 123456789
+
+# Check logs for that channel
+./tinyclaw.sh logs telegram
+```
+
+### Session not persisting
+
+```bash
+# Check if session directory exists
+ls -la /Users/pb/notes/chats_with_claude/
+
+# Check permissions
+ls -la /Users/pb/notes/
+
+# View session files
+npm run sessions -- view telegram 123456789
+```
+
 ### QR code not showing
 
 ```bash
@@ -584,11 +752,15 @@ Claude: [fixes and commits]
 - Telegram on any device
 - CLI for scripts
 
-All channels share the same Claude conversation!
+Each user has their own private conversation with Claude!
 
-## Star History
+### Multi-User Bot
 
-[![Star History Chart](https://api.star-history.com/svg?repos=jlia0/tinyclaw&type=date&legend=top-left)](https://www.star-history.com/#jlia0/tinyclaw&type=date&legend=top-left)
+- Friend A on Telegram: "Help me with Python"
+- Friend B on WhatsApp: "Help me with React"
+- Friend C on Discord: "Help me with Go"
+
+All three get private, isolated conversations. No context mixing!
 
 ## 🙏 Credits
 
@@ -596,6 +768,7 @@ All channels share the same Claude conversation!
 - Built on [Claude Code](https://claude.com/claude-code)
 - Uses [discord.js](https://discord.js.org/)
 - Uses [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js)
+- Uses [node-telegram-bot-api](https://github.com/yagop/node-telegram-bot-api)
 
 ## 📄 License
 

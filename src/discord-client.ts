@@ -9,6 +9,7 @@ import { Client, Events, GatewayIntentBits, Partials, Message, DMChannel } from 
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
+import { isUserAllowed, upsertPairingRequest, buildPairingMessage } from './pairing.js';
 
 const SCRIPT_DIR = path.resolve(__dirname, '..');
 const QUEUE_INCOMING = path.join(SCRIPT_DIR, '.tinyclaw/queue/incoming');
@@ -139,6 +140,27 @@ client.on(Events.MessageCreate, async (message: Message) => {
         const sender = message.author.displayName || message.author.username;
 
         log('INFO', `Message from ${sender}: ${message.content.substring(0, 50)}...`);
+
+        // Check if user is allowed
+        if (!isUserAllowed('discord', message.author.id)) {
+            // Only respond to /start command
+            if (message.content.trim().match(/^[!/]start$/i)) {
+                log('INFO', `🔒 /start from unauthorized user: ${sender} (${message.author.id})`);
+
+                // Create or update pairing request (keeps same code if exists)
+                const { code } = upsertPairingRequest('discord', sender, message.author.id);
+
+                // Always send pairing message on /start
+                const pairingMsg = buildPairingMessage('discord', message.author.id, code);
+                await message.reply(pairingMsg);
+                log('INFO', `📤 Sent pairing code ${code} to ${sender}`);
+            } else {
+                // Silently ignore all other messages from unauthorized users
+                log('INFO', `🚫 Ignored message from unauthorized user: ${sender} (${message.author.id})`);
+            }
+
+            return;
+        }
 
         // Check for reset command
         if (message.content.trim().match(/^[!/]reset$/i)) {

@@ -9,6 +9,7 @@ import { Client, LocalAuth, Message, Chat } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
+import { isUserAllowed, upsertPairingRequest, buildPairingMessage } from './pairing.js';
 
 const SCRIPT_DIR = path.resolve(__dirname, '..');
 const QUEUE_INCOMING = path.join(SCRIPT_DIR, '.tinyclaw/queue/incoming');
@@ -143,6 +144,27 @@ client.on('message_create', async (message: Message) => {
         }
 
         log('INFO', `📱 Message from ${sender}: ${message.body.substring(0, 50)}...`);
+
+        // Check if user is allowed
+        if (!isUserAllowed('whatsapp', message.from)) {
+            // Only respond to /start command
+            if (message.body.trim().match(/^[!/]start$/i)) {
+                log('INFO', `🔒 /start from unauthorized user: ${sender} (${message.from})`);
+
+                // Create or update pairing request (keeps same code if exists)
+                const { code } = upsertPairingRequest('whatsapp', sender, message.from);
+
+                // Always send pairing message on /start
+                const pairingMsg = buildPairingMessage('whatsapp', message.from, code);
+                await message.reply(pairingMsg);
+                log('INFO', `📤 Sent pairing code ${code} to ${sender}`);
+            } else {
+                // Silently ignore all other messages from unauthorized users
+                log('INFO', `🚫 Ignored message from unauthorized user: ${sender} (${message.from})`);
+            }
+
+            return;
+        }
 
         // Check for reset command
         if (message.body.trim().match(/^[!/]reset$/i)) {

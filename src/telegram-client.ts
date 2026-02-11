@@ -11,6 +11,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
+import { isUserAllowed, upsertPairingRequest, buildPairingMessage } from './pairing.js';
 
 const SCRIPT_DIR = path.resolve(__dirname, '..');
 const QUEUE_INCOMING = path.join(SCRIPT_DIR, '.tinyclaw/queue/incoming');
@@ -132,6 +133,29 @@ bot.on('message', async (msg) => {
         const senderId = msg.from ? msg.from.id.toString() : msg.chat.id.toString();
 
         log('INFO', `Message from ${sender}: ${msg.text.substring(0, 50)}...`);
+
+        // Check if user is allowed
+        if (!isUserAllowed('telegram', senderId)) {
+            // Only respond to /start command
+            if (msg.text.trim().match(/^[!/]start$/i)) {
+                log('INFO', `🔒 /start from unauthorized user: ${sender} (${senderId})`);
+
+                // Create or update pairing request (keeps same code if exists)
+                const { code } = upsertPairingRequest('telegram', sender, senderId);
+
+                // Always send pairing message on /start
+                const pairingMsg = buildPairingMessage('telegram', senderId, code);
+                await bot.sendMessage(msg.chat.id, pairingMsg, {
+                    reply_to_message_id: msg.message_id,
+                });
+                log('INFO', `📤 Sent pairing code ${code} to ${sender}`);
+            } else {
+                // Silently ignore all other messages from unauthorized users
+                log('INFO', `🚫 Ignored message from unauthorized user: ${sender} (${senderId})`);
+            }
+
+            return;
+        }
 
         // Check for reset command
         if (msg.text.trim().match(/^[!/]reset$/i)) {
