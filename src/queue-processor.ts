@@ -15,6 +15,8 @@ const QUEUE_PROCESSING = path.join(SCRIPT_DIR, '.tinyclaw/queue/processing');
 const LOG_FILE = path.join(SCRIPT_DIR, '.tinyclaw/logs/queue.log');
 const RESET_FLAG = path.join(SCRIPT_DIR, '.tinyclaw/reset_flag');
 const SETTINGS_FILE = path.join(SCRIPT_DIR, '.tinyclaw/settings.json');
+const DISCUSS_DIR = path.join(SCRIPT_DIR, '.tinyclaw/discuss');
+const AGENT_CWD_DIR = path.join(SCRIPT_DIR, '.tinyclaw/agent_cwd');
 
 // Get chats root directory from settings or use default
 function getChatsRootDir(): string {
@@ -88,7 +90,7 @@ function getModelFlag(): string {
 
 // Ensure directories exist
 const RESET_FLAGS_DIR = path.join(SCRIPT_DIR, '.tinyclaw/reset_flags');
-[QUEUE_INCOMING, QUEUE_OUTGOING, QUEUE_PROCESSING, path.dirname(LOG_FILE), RESET_FLAGS_DIR].forEach(dir => {
+[QUEUE_INCOMING, QUEUE_OUTGOING, QUEUE_PROCESSING, path.dirname(LOG_FILE), RESET_FLAGS_DIR, DISCUSS_DIR, AGENT_CWD_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
@@ -110,6 +112,47 @@ interface ResponseData {
     originalMessage: string;
     timestamp: number;
     messageId: string;
+    qaIndex?: number;
+}
+
+interface QAEntry {
+    question: string;
+    answer: string;
+    timestamp: number;
+}
+
+/**
+ * Append a Q&A pair to the discuss history file for a user.
+ * Returns the 0-based index of the appended entry.
+ */
+function appendQAHistory(channel: string, senderId: string, question: string, answer: string): number {
+    const safeSenderId = senderId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const historyFile = path.join(DISCUSS_DIR, `${channel}_${safeSenderId}.json`);
+
+    let history: QAEntry[] = [];
+    try {
+        history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+    } catch {
+        // File doesn't exist or is invalid — start fresh
+    }
+
+    history.push({ question, answer, timestamp: Date.now() });
+    fs.writeFileSync(historyFile, JSON.stringify(history, null, 2));
+
+    return history.length - 1;
+}
+
+/**
+ * Clear discuss history for a user (on /reset).
+ */
+function clearQAHistory(channel: string, senderId: string): void {
+    const safeSenderId = senderId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const historyFile = path.join(DISCUSS_DIR, `${channel}_${safeSenderId}.json`);
+    try {
+        fs.unlinkSync(historyFile);
+    } catch {
+        // File doesn't exist — nothing to clear
+    }
 }
 
 // Logger
@@ -134,6 +177,24 @@ function getUserSessionDir(channel: string, senderId: string): string {
         log('INFO', `📁 Created new session directory: ${sessionDir}`);
     }
 
+    return sessionDir;
+}
+
+/**
+ * Get the agent working directory for a user.
+ * Returns the custom dir if set, otherwise the session dir.
+ */
+function getAgentCwd(channel: string, senderId: string, sessionDir: string): string {
+    const safeSenderId = senderId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const cwdFile = path.join(AGENT_CWD_DIR, `${channel}_${safeSenderId}`);
+    try {
+        const cwd = fs.readFileSync(cwdFile, 'utf8').trim();
+        if (cwd && fs.existsSync(cwd)) {
+            return cwd;
+        }
+    } catch {
+        // No custom cwd set
+    }
     return sessionDir;
 }
 
@@ -181,31 +242,51 @@ async function processMessage(messageFile: string): Promise<void> {
             if (fs.existsSync(RESET_FLAG)) {
                 fs.unlinkSync(RESET_FLAG);
             }
+            // Clear discuss history on reset
+            clearQAHistory(channel, senderId);
         }
 
-        // Call Claude from user-specific directory
+        // Call Claude from agent working directory (defaults to session dir)
+        const workingDir = getAgentCwd(channel, senderId, sessionDir);
         let response: string;
         try {
             const modelFlag = getModelFlag();
+            // Strip env vars that interfere with Claude CLI:
+            // - CLAUDECODE: prevents nested-session detection
+            // - ANTHROPIC_API_KEY: forces API credits instead of Max subscription
+            const env = { ...process.env };
+            delete env.CLAUDECODE;
+            delete env.ANTHROPIC_API_KEY;
+
             response = execSync(
-                `cd "${sessionDir}" && claude --dangerously-skip-permissions ${modelFlag}${continueFlag}-p "${message.replace(/"/g, '\\"')}"`,
+                `cd "${workingDir}" && claude --dangerously-skip-permissions ${modelFlag}${continueFlag}-p "${message.replace(/"/g, '\\"')}"`,
                 {
                     encoding: "utf-8",
                     timeout: 0, // No timeout - wait for Claude to finish (agents can run long)
                     maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+                    env,
                 },
             );
         } catch (error) {
-            log('ERROR', `Claude error: ${(error as Error).message}`);
+            const err = error as { message?: string; stderr?: string | Buffer; stdout?: string | Buffer; status?: number };
+            log('ERROR', `Claude error: ${err.message}`);
+            if (err.stderr) {
+                log('ERROR', `Claude stderr: ${err.stderr.toString().trim()}`);
+            }
+            if (err.stdout) {
+                log('ERROR', `Claude stdout: ${err.stdout.toString().trim().substring(0, 500)}`);
+            }
+            log('ERROR', `Claude exit code: ${err.status}`);
             response = "Sorry, I encountered an error processing your request.";
         }
 
         // Clean response
         response = response.trim();
 
-        // Limit response length
-        if (response.length > 4000) {
-            response = response.substring(0, 3900) + '\n\n[Response truncated...]';
+        // Save Q&A to discuss history (skip heartbeat messages)
+        let qaIndex: number | undefined;
+        if (channel !== 'heartbeat') {
+            qaIndex = appendQAHistory(channel, senderId, message, response);
         }
 
         // Write response to outgoing queue
@@ -215,7 +296,8 @@ async function processMessage(messageFile: string): Promise<void> {
             message: response,
             originalMessage: message,
             timestamp: Date.now(),
-            messageId
+            messageId,
+            ...(qaIndex !== undefined && { qaIndex }),
         };
 
         // For heartbeat messages, write to a separate location (they handle their own responses)

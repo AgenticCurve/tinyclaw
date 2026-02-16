@@ -10,7 +10,8 @@
     "telegram": "node dist/telegram-client.js",
     "queue": "node dist/queue-processor.js",
     "pairing": "node dist/pairing-cli.js",
-    "sessions": "node dist/sessions-cli.js"
+    "sessions": "node dist/sessions-cli.js",
+    "call-server": "node dist/call-server.js"
   },
   "dependencies": {
     "discord.js": "^14.16.0",

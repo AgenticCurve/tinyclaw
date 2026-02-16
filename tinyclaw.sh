@@ -200,6 +200,36 @@ start_daemon() {
         fi
     done
 
+    # Discuss feature env vars — check settings first, fall back to shell env
+    local openai_key
+    openai_key=$(jq -r '.discuss.openai_api_key // empty' "$SETTINGS_FILE" 2>/dev/null)
+    [ -z "$openai_key" ] && openai_key="${OPENAI_API_KEY:-}"
+    local call_server_url
+    call_server_url=$(jq -r '.discuss.call_server_url // empty' "$SETTINGS_FILE" 2>/dev/null)
+    local call_server_port
+    call_server_port=$(jq -r '.discuss.call_server_port // empty' "$SETTINGS_FILE" 2>/dev/null)
+
+    if [ -n "$openai_key" ] && [ -n "$call_server_url" ]; then
+        echo "OPENAI_API_KEY=${openai_key}" >> "$env_file"
+        echo "CALL_SERVER_URL=${call_server_url}" >> "$env_file"
+        echo "CALL_SERVER_PORT=${call_server_port:-3147}" >> "$env_file"
+    fi
+
+    # Audio feature env vars — check settings first, fall back to shell env
+    local openrouter_key
+    openrouter_key=$(jq -r '.audio.openrouter_api_key // empty' "$SETTINGS_FILE" 2>/dev/null)
+    [ -z "$openrouter_key" ] && openrouter_key="${OPENROUTER_API_KEY:-}"
+    local resemble_key
+    resemble_key=$(jq -r '.audio.resemble_api_key // empty' "$SETTINGS_FILE" 2>/dev/null)
+    [ -z "$resemble_key" ] && resemble_key="${RESEMBLE_API_KEY:-}"
+    local resemble_voice
+    resemble_voice=$(jq -r '.audio.resemble_voice_uuid // empty' "$SETTINGS_FILE" 2>/dev/null)
+    [ -z "$resemble_voice" ] && resemble_voice="${RESEMBLE_VOICE_UUID:-}"
+
+    [ -n "$openrouter_key" ] && echo "OPENROUTER_API_KEY=${openrouter_key}" >> "$env_file"
+    [ -n "$resemble_key" ] && echo "RESEMBLE_API_KEY=${resemble_key}" >> "$env_file"
+    [ -n "$resemble_voice" ] && echo "RESEMBLE_VOICE_UUID=${resemble_voice}" >> "$env_file"
+
     # Report channels
     echo -e "${BLUE}Channels:${NC}"
     for ch in "${ACTIVE_CHANNELS[@]}"; do
@@ -212,10 +242,20 @@ start_daemon() {
     for ch in "${ACTIVE_CHANNELS[@]}"; do
         log_tail_cmd="$log_tail_cmd .tinyclaw/logs/${ch}.log"
     done
+    if [ "$has_discuss" = true ]; then
+        log_tail_cmd="$log_tail_cmd .tinyclaw/logs/call-server.log"
+    fi
 
     # --- Build tmux session dynamically ---
-    # Total panes = N channels + 3 (queue, heartbeat, logs)
+    # Total panes = N channels + 3 (queue, heartbeat, logs) + optional call-server
+    local has_discuss=false
+    if [ -n "$openai_key" ] && [ -n "$call_server_url" ]; then
+        has_discuss=true
+    fi
     local total_panes=$(( ${#ACTIVE_CHANNELS[@]} + 3 ))
+    if [ "$has_discuss" = true ]; then
+        total_panes=$(( total_panes + 1 ))
+    fi
 
     tmux new-session -d -s "$TMUX_SESSION" -n "tinyclaw" -c "$SCRIPT_DIR"
 
@@ -244,6 +284,13 @@ start_daemon() {
     tmux send-keys -t "$TMUX_SESSION:0.$pane_idx" "cd '$SCRIPT_DIR' && ./heartbeat-cron.sh" C-m
     tmux select-pane -t "$TMUX_SESSION:0.$pane_idx" -T "Heartbeat"
     pane_idx=$((pane_idx + 1))
+
+    # Call server pane (Discuss feature)
+    if [ "$has_discuss" = true ]; then
+        tmux send-keys -t "$TMUX_SESSION:0.$pane_idx" "cd '$SCRIPT_DIR' && node dist/call-server.js" C-m
+        tmux select-pane -t "$TMUX_SESSION:0.$pane_idx" -T "Call Server"
+        pane_idx=$((pane_idx + 1))
+    fi
 
     # Logs pane
     tmux send-keys -t "$TMUX_SESSION:0.$pane_idx" "cd '$SCRIPT_DIR' && $log_tail_cmd" C-m
@@ -346,6 +393,7 @@ stop_daemon() {
         pkill -f "${CHANNEL_SCRIPT[$ch]}" || true
     done
     pkill -f "dist/queue-processor.js" || true
+    pkill -f "dist/call-server.js" || true
     pkill -f "heartbeat-cron.sh" || true
 
     echo -e "${GREEN}✓ TinyClaw stopped${NC}"
@@ -417,6 +465,12 @@ status_daemon() {
         echo -e "Heartbeat:       ${GREEN}Running${NC}"
     else
         echo -e "Heartbeat:       ${RED}Not Running${NC}"
+    fi
+
+    if pgrep -f "dist/call-server.js" > /dev/null; then
+        echo -e "Call Server:     ${GREEN}Running${NC}"
+    else
+        echo -e "Call Server:     ${RED}Not Running${NC}"
     fi
 
     # Recent activity per channel (only show if log file exists)
@@ -514,10 +568,15 @@ channels_reset() {
 
 # Parse optional flags before command
 CHATS_DIR=""
+DISCUSS_URL=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --chats-dir)
             CHATS_DIR="$2"
+            shift 2
+            ;;
+        --url)
+            DISCUSS_URL="$2"
             shift 2
             ;;
         *)
@@ -534,11 +593,22 @@ if [ -n "$CHATS_DIR" ]; then
         exit 1
     fi
 
-    # Update chats_root_dir using jq
-    local tmp_file="$SETTINGS_FILE.tmp"
-    jq ".chats_root_dir = \"$CHATS_DIR\"" "$SETTINGS_FILE" > "$tmp_file" && mv "$tmp_file" "$SETTINGS_FILE"
+    jq ".chats_root_dir = \"$CHATS_DIR\"" "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
 
     echo -e "${GREEN}✓ Chats directory set to: $CHATS_DIR${NC}"
+    echo ""
+fi
+
+# If discuss URL was specified, update settings
+if [ -n "$DISCUSS_URL" ]; then
+    if [ ! -f "$SETTINGS_FILE" ]; then
+        echo -e "${RED}Error: No settings file found. Run setup first.${NC}"
+        exit 1
+    fi
+
+    jq ".discuss.call_server_url = \"$DISCUSS_URL\"" "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+
+    echo -e "${GREEN}✓ Discuss URL set to: $DISCUSS_URL${NC}"
     echo ""
 fi
 
@@ -638,10 +708,11 @@ case "${1:-}" in
         local_names=$(IFS='|'; echo "${ALL_CHANNELS[*]}")
         echo -e "${BLUE}TinyClaw - Claude Code + Messaging Channels${NC}"
         echo ""
-        echo "Usage: $0 [--chats-dir <path>] {start|stop|restart|status|setup|send|logs|reset|channels|model|attach}"
+        echo "Usage: $0 [options] {start|stop|restart|status|setup|send|logs|reset|channels|model|attach}"
         echo ""
         echo "Options:"
         echo "  --chats-dir <path>       Set chats directory (e.g., ~/my_chats)"
+        echo "  --url <url>              Set Discuss call server URL (e.g., Cloudflare tunnel URL)"
         echo ""
         echo "Commands:"
         echo "  start                    Start TinyClaw"

@@ -122,6 +122,75 @@ fi
 echo -e "${GREEN}✓ Heartbeat interval: ${HEARTBEAT_INTERVAL}s${NC}"
 echo ""
 
+# Discuss (voice) feature - OpenAI config
+echo "Enable voice Discuss feature? (requires OpenAI API key)"
+echo -e "${YELLOW}(Adds a 'Discuss' button to Telegram replies for voice conversations)${NC}"
+echo ""
+read -rp "  Enable Discuss? [y/N]: " DISCUSS_CHOICE
+OPENAI_API_KEY=""
+CALL_SERVER_URL=""
+CALL_SERVER_PORT="3147"
+
+if [[ "$DISCUSS_CHOICE" =~ ^[yY] ]]; then
+    echo ""
+    echo "Enter your OpenAI API key:"
+    echo -e "${YELLOW}(Get one at: https://platform.openai.com/api-keys)${NC}"
+    echo ""
+    read -rp "API Key: " OPENAI_API_KEY
+
+    if [ -z "$OPENAI_API_KEY" ]; then
+        echo -e "${RED}OpenAI API key is required for Discuss feature${NC}"
+        echo -e "${YELLOW}Discuss feature will be disabled${NC}"
+    else
+        echo -e "${GREEN}✓ OpenAI API key saved${NC}"
+        echo ""
+
+        read -rp "Call server port [default: 3100]: " PORT_INPUT
+        CALL_SERVER_PORT=${PORT_INPUT:-3100}
+
+        read -rp "Call server URL [default: http://localhost:${CALL_SERVER_PORT}]: " URL_INPUT
+        CALL_SERVER_URL=${URL_INPUT:-http://localhost:${CALL_SERVER_PORT}}
+
+        echo -e "${GREEN}✓ Discuss feature enabled (${CALL_SERVER_URL})${NC}"
+    fi
+fi
+echo ""
+
+# Audio features
+echo "Enable audio features?"
+echo -e "${YELLOW}(Voice messages → text via OpenRouter, Read Aloud via Resemble AI)${NC}"
+echo ""
+
+OPENROUTER_API_KEY=""
+RESEMBLE_API_KEY_VAL=""
+RESEMBLE_VOICE_UUID=""
+
+read -rp "  Enable voice message transcription? [y/N]: " STT_CHOICE
+if [[ "$STT_CHOICE" =~ ^[yY] ]]; then
+    echo ""
+    echo "Enter your OpenRouter API key:"
+    echo -e "${YELLOW}(Get one at: https://openrouter.ai/keys)${NC}"
+    read -rp "API Key: " OPENROUTER_API_KEY
+    if [ -n "$OPENROUTER_API_KEY" ]; then
+        echo -e "${GREEN}✓ Voice transcription enabled${NC}"
+    fi
+fi
+echo ""
+
+read -rp "  Enable Read Aloud (TTS)? [y/N]: " TTS_CHOICE
+if [[ "$TTS_CHOICE" =~ ^[yY] ]]; then
+    echo ""
+    echo "Enter your Resemble AI API key:"
+    echo -e "${YELLOW}(Get one at: https://app.resemble.ai)${NC}"
+    read -rp "API Key: " RESEMBLE_API_KEY_VAL
+    if [ -n "$RESEMBLE_API_KEY_VAL" ]; then
+        echo -e "${GREEN}✓ Read Aloud enabled${NC}"
+        echo ""
+        read -rp "Resemble Voice UUID [default: auto-detect]: " RESEMBLE_VOICE_UUID
+    fi
+fi
+echo ""
+
 # Build enabled channels array JSON
 CHANNELS_JSON="["
 for i in "${!ENABLED_CHANNELS[@]}"; do
@@ -156,6 +225,16 @@ cat > "$SETTINGS_FILE" <<EOF
   },
   "monitoring": {
     "heartbeat_interval": ${HEARTBEAT_INTERVAL}
+  },
+  "discuss": {
+    "openai_api_key": "${OPENAI_API_KEY}",
+    "call_server_url": "${CALL_SERVER_URL}",
+    "call_server_port": ${CALL_SERVER_PORT}
+  },
+  "audio": {
+    "openrouter_api_key": "${OPENROUTER_API_KEY}",
+    "resemble_api_key": "${RESEMBLE_API_KEY_VAL}",
+    "resemble_voice_uuid": "${RESEMBLE_VOICE_UUID}"
   },
   "chats_root_dir": "${CHATS_ROOT_DIR}"
 }
