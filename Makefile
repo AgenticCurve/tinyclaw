@@ -123,6 +123,10 @@ tunnel: tunnel-stop
 	if [ -f "$(SETTINGS_FILE)" ] && command -v jq >/dev/null 2>&1; then \
 		jq ".discuss.call_server_url = \"$$TUNNEL_URL\"" $(SETTINGS_FILE) > $(SETTINGS_FILE).tmp && mv $(SETTINGS_FILE).tmp $(SETTINGS_FILE); \
 	fi; \
+	if [ -f .env ]; then \
+		grep -v '^CALL_SERVER_URL=' .env > .env.tmp && mv .env.tmp .env; \
+	fi; \
+	echo "CALL_SERVER_URL=$$TUNNEL_URL" >> .env; \
 	echo ""; \
 	echo "=============================="; \
 	echo "  Cloudflare Tunnel Active"; \
@@ -130,7 +134,7 @@ tunnel: tunnel-stop
 	echo "URL:  $$TUNNEL_URL"; \
 	echo "PID:  $$(cat $(PID_FILE))"; \
 	echo "Log:  $(LOG_DIR)/tunnel.log"; \
-	echo "Saved to settings.json"; \
+	echo "Saved to settings.json + .env"; \
 	echo ""; \
 	echo "Now run:  make start"
 
