@@ -177,6 +177,11 @@ bot.on('message', async (msg) => {
 
         if (!text) return;
 
+        // If replying to a message, prepend the original as context
+        if (msg.reply_to_message?.text) {
+            text = `[Replying to: "${msg.reply_to_message.text}"]\n\n${text}`;
+        }
+
         log('INFO', `Message from ${sender}: ${text.substring(0, 50)}...`);
 
         // Check if user is allowed
