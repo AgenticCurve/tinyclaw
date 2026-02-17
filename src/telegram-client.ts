@@ -447,6 +447,12 @@ bot.on('polling_error', (error) => {
     log('ERROR', `Polling error: ${error.message}`);
 });
 
+// Prevent unhandled rejections from crashing the process (network blips)
+process.on('unhandledRejection', (reason) => {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    log('ERROR', `Unhandled rejection (recovered): ${msg}`);
+});
+
 // Graceful shutdown
 process.on('SIGINT', () => {
     log('INFO', 'Shutting down Telegram client...');
