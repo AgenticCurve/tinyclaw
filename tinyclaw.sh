@@ -191,7 +191,13 @@ start_daemon() {
     done
 
     # Write tokens to .env for the Node.js clients
+    # First, source existing .env so its values are available as fallback
     local env_file="$SCRIPT_DIR/.env"
+    if [ -f "$env_file" ]; then
+        set -a
+        source "$env_file"
+        set +a
+    fi
     : > "$env_file"
     for ch in "${ACTIVE_CHANNELS[@]}"; do
         local env_var="${CHANNEL_TOKEN_ENV[$ch]:-}"
@@ -206,8 +212,10 @@ start_daemon() {
     [ -z "$openai_key" ] && openai_key="${OPENAI_API_KEY:-}"
     local call_server_url
     call_server_url=$(jq -r '.discuss.call_server_url // empty' "$SETTINGS_FILE" 2>/dev/null)
+    [ -z "$call_server_url" ] && call_server_url="${CALL_SERVER_URL:-}"
     local call_server_port
     call_server_port=$(jq -r '.discuss.call_server_port // empty' "$SETTINGS_FILE" 2>/dev/null)
+    [ -z "$call_server_port" ] && call_server_port="${CALL_SERVER_PORT:-}"
 
     if [ -n "$openai_key" ] && [ -n "$call_server_url" ]; then
         echo "OPENAI_API_KEY=${openai_key}" >> "$env_file"
