@@ -108,7 +108,7 @@ tunnel: tunnel-stop
 	@TUNNEL_URL=""; \
 	for i in $$(seq 1 30); do \
 		if [ -f "$(LOG_DIR)/tunnel.log" ]; then \
-			TUNNEL_URL=$$(grep -aoE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' $(LOG_DIR)/tunnel.log | head -1); \
+			TUNNEL_URL=$$(grep -aoE 'https://[a-zA-Z0-9]+-[a-zA-Z0-9-]+\.trycloudflare\.com' $(LOG_DIR)/tunnel.log | head -1); \
 			if [ -n "$$TUNNEL_URL" ]; then break; fi; \
 		fi; \
 		sleep 1; \
